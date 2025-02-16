@@ -14,7 +14,7 @@ const router = Router();
 //router.post("/signup", Signup);
 router.post("/login", login);
 
-router.post("/postarticles", PostArticle);
+router.post("/postarticles", protectRoute, PostArticle);
 router.get("/getarticles", GetArticles);
 router.get("/article/:id", GetAnArticle);
 router.post("/track", VisitorData);
