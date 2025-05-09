@@ -6,14 +6,7 @@ const PostArticle = async (req, res) => {
       req.body;
 
     // Check if all required fields exist
-    if (
-      !title ||
-      !subtitle ||
-      !publishedBy ||
-      !image ||
-      !sections ||
-      !demoLink
-    ) {
+    if (!title || !subtitle || !publishedBy || !image || !sections) {
       return res.status(400).json({ message: "All fields are required!" });
     }
 
