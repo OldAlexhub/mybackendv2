@@ -36,9 +36,10 @@ const ProjectSchema = new mongoose.Schema(
     },
     demoLink: {
       type: String,
+      required: false,
       validate: {
         validator: function (v) {
-          return /^https?:\/\/[^\s$.?#].[^\s]*$/.test(v);
+          return !v || /^https?:\/\/[^\s]+$/.test(v);
         },
         message: "Invalid URL format",
       },
