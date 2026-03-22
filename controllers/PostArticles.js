@@ -2,12 +2,12 @@ import ArticleModel from "../models/articles.js";
 
 const PostArticle = async (req, res) => {
   try {
-    const { title, subtitle, publishedBy, image, sections, demoLink } =
+    const { title, subtitle, category, publishedBy, image, sections, demoLink } =
       req.body;
 
     // Check if all required fields exist
-    if (!title || !subtitle || !publishedBy || !image || !sections) {
-      return res.status(400).json({ message: "All fields are required!" });
+    if (!title || !subtitle || !category || !publishedBy || !image || !sections) {
+      return res.status(400).json({ message: "All fields including category are required!" });
     }
 
     // Check if article with same title exists (Optional)
@@ -22,6 +22,7 @@ const PostArticle = async (req, res) => {
     const newArticle = new ArticleModel({
       title,
       subtitle,
+      category: category.trim(),
       publishedBy,
       image,
       sections,

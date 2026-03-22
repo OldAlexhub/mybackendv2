@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import PROJECT_CATEGORIES from "../constants/projectCategories.js";
 
 const ProjectSchema = new mongoose.Schema(
   {
@@ -11,6 +12,12 @@ const ProjectSchema = new mongoose.Schema(
       type: String,
 
       trim: true,
+    },
+    category: {
+      type: String,
+      required: true,
+      trim: true,
+      enum: PROJECT_CATEGORIES,
     },
     date: {
       type: Date,
