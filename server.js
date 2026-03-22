@@ -25,10 +25,18 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDirectory = path.join(__dirname, "./public");
 app.use(express.static(publicDirectory));
 
-connectToDb();
-
 app.use("/", routes);
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+const startServer = async () => {
+  try {
+    await connectToDb();
+
+    app.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+    });
+  } catch (error) {
+    process.exit(1);
+  }
+};
+
+startServer();

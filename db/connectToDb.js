@@ -1,12 +1,17 @@
 import mongoose from "mongoose";
 
-const connectToDb = async (req, res) => {
+const connectToDb = async () => {
   try {
+    if (!process.env.MONGO_URL) {
+      throw new Error("MONGO_URL is not configured.");
+    }
+
     await mongoose.connect(process.env.MONGO_URL);
 
     console.log(`Connected to MongoDb`);
   } catch (error) {
-    console.log(`Failed to connect to MongoDB`);
+    console.error(`Failed to connect to MongoDB:`, error.message);
+    throw error;
   }
 };
 
