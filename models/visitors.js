@@ -21,7 +21,14 @@ const VisitorInteractionSchema = new mongoose.Schema(
     },
     eventType: {
       type: String,
-      enum: ["click", "page_view", "scroll", "hover", "form_submission"],
+      enum: [
+        "click",
+        "page_view",
+        "scroll",
+        "hover",
+        "form_submission",
+        "engagement",
+      ],
       required: true,
     },
     targetElement: {
@@ -40,6 +47,11 @@ const VisitorInteractionSchema = new mongoose.Schema(
       type: Date,
       default: Date.now, // Records the time of interaction
       required: true,
+    },
+    engagementMs: {
+      type: Number,
+      default: 0,
+      min: 0,
     },
   },
   { timestamps: true } // Adds `createdAt` and `updatedAt`

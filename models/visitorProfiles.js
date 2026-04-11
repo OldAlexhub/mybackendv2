@@ -64,8 +64,13 @@ const VisitorProfileSchema = new mongoose.Schema(
     },
     pageViewCount: {
       type: Number,
-      default: 1,
-      min: 1,
+      default: 0,
+      min: 0,
+    },
+    totalEngagementMs: {
+      type: Number,
+      default: 0,
+      min: 0,
     },
     firstSeenAt: {
       type: Date,
@@ -79,6 +84,59 @@ const VisitorProfileSchema = new mongoose.Schema(
     lastVisitAt: {
       type: Date,
       default: Date.now,
+    },
+    clientSignals: {
+      cookiesEnabled: {
+        type: Boolean,
+        default: null,
+      },
+      cookieCount: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+      cookieNames: {
+        type: [String],
+        default: [],
+      },
+      localStorageItemCount: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+      localStorageBytes: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+      sessionStorageItemCount: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+      sessionStorageBytes: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+      cacheStorageSupported: {
+        type: Boolean,
+        default: null,
+      },
+      cacheBucketCount: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+      cacheEntryCount: {
+        type: Number,
+        default: 0,
+        min: 0,
+      },
+      lastCapturedAt: {
+        type: Date,
+        default: null,
+      },
     },
   },
   { timestamps: true }
