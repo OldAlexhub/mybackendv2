@@ -7,8 +7,11 @@ const VISIT_WINDOW_IN_HOURS = 12;
 const MAX_ENGAGEMENT_MS = 30 * 60 * 1000;
 const MAX_TRACKED_NAMES = 12;
 const MAX_NAME_LENGTH = 80;
+const RECENT_VISITOR_LIMIT = 50;
 const BOT_PATTERN =
   /bot|spider|crawler|preview|slurp|bingpreview|headless|wget|curl|python-requests|node-fetch|axios/i;
+const VISITOR_PROFILE_FIELDS =
+  "visitorId ipAddress city region country timezone visitCount pageViewCount totalEngagementMs referrer firstPage lastPage firstSeenAt lastSeenAt userAgent clientSignals";
 
 const sanitizeText = (value, fallback = UNKNOWN_VALUE) => {
   if (typeof value !== "string") {
@@ -240,7 +243,19 @@ export const buildVisitorSummary = async () => {
   };
 };
 
-export const buildVisitorAnalytics = async () => {
+const fetchVisitorProfiles = async (limit = null) => {
+  let query = VisitorProfileModel.find()
+    .sort({ lastSeenAt: -1 })
+    .select(VISITOR_PROFILE_FIELDS);
+
+  if (Number.isInteger(limit) && limit > 0) {
+    query = query.limit(limit);
+  }
+
+  return query.lean();
+};
+
+export const buildVisitorAnalytics = async ({ includeAllVisitors = false } = {}) => {
   const dailyTrafficWindowStart = new Date(
     Date.now() - 14 * 24 * 60 * 60 * 1000
   );
@@ -255,7 +270,7 @@ export const buildVisitorAnalytics = async () => {
     topCountries,
     topCities,
     topReferrers,
-    recentVisitors,
+    visitorProfiles,
     dailyTraffic,
     popularPages,
     storageInsights,
@@ -318,13 +333,9 @@ export const buildVisitorAnalytics = async () => {
         { $sort: { visitors: -1, _id: 1 } },
         { $limit: 8 },
       ]),
-      VisitorProfileModel.find()
-        .sort({ lastSeenAt: -1 })
-        .limit(50)
-        .select(
-          "ipAddress city region country timezone visitCount pageViewCount totalEngagementMs referrer firstPage lastPage firstSeenAt lastSeenAt userAgent clientSignals"
-        )
-        .lean(),
+      includeAllVisitors
+        ? fetchVisitorProfiles()
+        : fetchVisitorProfiles(RECENT_VISITOR_LIMIT),
       VisitorInteractionModel.aggregate([
         {
           $match: {
@@ -461,6 +472,9 @@ export const buildVisitorAnalytics = async () => {
     totalCacheEntries: 0,
   };
   const trackedProfiles = storageSummary.trackedProfiles || 0;
+  const recentVisitors = includeAllVisitors
+    ? visitorProfiles.slice(0, RECENT_VISITOR_LIMIT)
+    : visitorProfiles;
 
   return {
     summary: {
@@ -543,5 +557,6 @@ export const buildVisitorAnalytics = async () => {
       })),
     },
     recentVisitors,
+    ...(includeAllVisitors ? { allVisitors: visitorProfiles } : {}),
   };
 };
