@@ -1,8 +1,8 @@
 import mongoose from "mongoose";
 import ArticleEngagementModel from "../models/articleEngagement.js";
 import {
+  buildArticleEngagementResponse,
   normalizeArticleSlug,
-  serializeArticleComments,
 } from "../utils/articleEngagement.js";
 
 const PostArticleComment = async (req, res) => {
@@ -43,12 +43,12 @@ const PostArticleComment = async (req, res) => {
     engagement.comments.push({ name, message });
     await engagement.save();
 
-    const comments = serializeArticleComments(engagement.comments);
+    const responsePayload = buildArticleEngagementResponse(engagement);
 
     return res.status(201).json({
-      slug,
-      comment: comments[0],
-      commentsCount: comments.length,
+      ...responsePayload,
+      comment: responsePayload.comments[0],
+      message: "Comment recorded successfully.",
     });
   } catch (error) {
     console.error("PostArticleComment Error:", error);

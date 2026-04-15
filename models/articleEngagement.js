@@ -45,6 +45,15 @@ const ArticleEngagementSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+    likedBy: {
+      type: [String],
+      default: [],
+    },
+    shares: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     comments: {
       type: [ArticleCommentSchema],
       default: [],

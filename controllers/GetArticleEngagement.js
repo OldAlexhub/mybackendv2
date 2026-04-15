@@ -1,13 +1,15 @@
 import mongoose from "mongoose";
 import ArticleEngagementModel from "../models/articleEngagement.js";
 import {
+  buildArticleEngagementResponse,
   normalizeArticleSlug,
-  serializeArticleComments,
+  normalizeVisitorId,
 } from "../utils/articleEngagement.js";
 
 const GetArticleEngagement = async (req, res) => {
   try {
     const slug = normalizeArticleSlug(req.params.slug);
+    const visitorId = normalizeVisitorId(req.query.visitorId);
 
     if (!slug) {
       return res.status(400).json({ message: "Article slug is required." });
@@ -21,14 +23,17 @@ const GetArticleEngagement = async (req, res) => {
     }
 
     const engagement = await ArticleEngagementModel.findOne({ slug }).lean();
-    const comments = serializeArticleComments(engagement?.comments || []);
+    const payload = buildArticleEngagementResponse(
+      engagement
+        ? {
+            ...engagement,
+            slug,
+          }
+        : { slug },
+      visitorId
+    );
 
-    return res.status(200).json({
-      slug,
-      likes: engagement?.likes || 0,
-      comments,
-      commentsCount: comments.length,
-    });
+    return res.status(200).json(payload);
   } catch (error) {
     console.error("GetArticleEngagement Error:", error);
     return res.status(500).json({
