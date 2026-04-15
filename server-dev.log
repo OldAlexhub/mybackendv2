@@ -1,0 +1,6 @@
+
+> server@1.0.0 start
+> node server.js
+
+Connected to MongoDb
+Server running on port 3001
