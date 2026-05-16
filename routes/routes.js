@@ -17,6 +17,7 @@ import PostContact from "../controllers/PostContact.js";
 import GetContacts from "../controllers/GetContacts.js";
 import GetAndroidApps from "../controllers/GetAndroidApps.js";
 import PostAndroidApp from "../controllers/PostAndroidApp.js";
+import UpdateAndroidApp from "../controllers/UpdateAndroidApp.js";
 import DeleteAndroidApp from "../controllers/DeleteAndroidApp.js";
 
 const router = Router();
@@ -45,6 +46,7 @@ router.get("/messages", protectRoute, GetContacts);
 
 router.get("/androidapps", GetAndroidApps);
 router.post("/androidapps", protectRoute, PostAndroidApp);
+router.patch("/androidapps/:id", protectRoute, UpdateAndroidApp);
 router.delete("/androidapps/:id", protectRoute, DeleteAndroidApp);
 
 export default router;
