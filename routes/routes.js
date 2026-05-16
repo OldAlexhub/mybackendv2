@@ -15,6 +15,9 @@ import GetVisitorSummary from "../controllers/GetVisitorSummary.js";
 import GetVisitorAnalytics from "../controllers/GetVisitorAnalytics.js";
 import PostContact from "../controllers/PostContact.js";
 import GetContacts from "../controllers/GetContacts.js";
+import GetAndroidApps from "../controllers/GetAndroidApps.js";
+import PostAndroidApp from "../controllers/PostAndroidApp.js";
+import DeleteAndroidApp from "../controllers/DeleteAndroidApp.js";
 
 const router = Router();
 
@@ -39,5 +42,9 @@ router.get("/visitors/analytics", protectRoute, GetVisitorAnalytics);
 
 router.post("/submit", PostContact);
 router.get("/messages", protectRoute, GetContacts);
+
+router.get("/androidapps", GetAndroidApps);
+router.post("/androidapps", protectRoute, PostAndroidApp);
+router.delete("/androidapps/:id", protectRoute, DeleteAndroidApp);
 
 export default router;
