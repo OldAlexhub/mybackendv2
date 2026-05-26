@@ -25,6 +25,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDirectory = path.join(__dirname, "./public");
 app.use(express.static(publicDirectory));
 
+app.get("/sitemap.xml", (req, res) => {
+  res.setHeader("Content-Type", "application/xml");
+  res.sendFile(path.join(publicDirectory, "sitemap.xml"));
+});
+
 app.use("/", routes);
 
 const startServer = async () => {
