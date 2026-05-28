@@ -2,32 +2,42 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
         <loc>https://mohamedgad.com/</loc>
-        <lastmod>2025-02-15</lastmod>
+        <lastmod>2026-05-27</lastmod>
         <priority>1.0</priority>
     </url>
     <url>
         <loc>https://mohamedgad.com/aboutme</loc>
-        <lastmod>2025-02-15</lastmod>
+        <lastmod>2026-05-27</lastmod>
         <priority>0.8</priority>
-    </url>
-    <url>
-        <loc>https://mohamedgad.com/blog</loc>
-        <lastmod>2025-02-15</lastmod>
-        <priority>0.8</priority>
-    </url>
-    <url>
-        <loc>https://mohamedgad.com/experiances</loc>
-        <lastmod>2025-02-15</lastmod>
-        <priority>0.7</priority>
     </url>
     <url>
         <loc>https://mohamedgad.com/projects</loc>
-        <lastmod>2025-02-15</lastmod>
+        <lastmod>2026-05-27</lastmod>
         <priority>0.9</priority>
     </url>
     <url>
+        <loc>https://mohamedgad.com/experiences</loc>
+        <lastmod>2026-05-27</lastmod>
+        <priority>0.7</priority>
+    </url>
+    <url>
+        <loc>https://mohamedgad.com/articlelist</loc>
+        <lastmod>2026-05-27</lastmod>
+        <priority>0.8</priority>
+    </url>
+    <url>
+        <loc>https://mohamedgad.com/technews</loc>
+        <lastmod>2026-05-27</lastmod>
+        <priority>0.7</priority>
+    </url>
+    <url>
+        <loc>https://mohamedgad.com/oldalexhub</loc>
+        <lastmod>2026-05-27</lastmod>
+        <priority>0.6</priority>
+    </url>
+    <url>
         <loc>https://mohamedgad.com/contactus</loc>
-        <lastmod>2025-02-15</lastmod>
+        <lastmod>2026-05-27</lastmod>
         <priority>0.6</priority>
     </url>
 </urlset>
