@@ -1,8 +1,10 @@
 import VisitorProfileModel from "../models/visitorProfiles.js";
 import VisitorInteractionModel from "../models/visitors.js";
 import {
+  buildVisitorLocationUpdate,
   buildVisitorSummary,
   extractVisitorMetadata,
+  isPublicIp,
   normalizeClientSignals,
   normalizeEngagementMs,
   normalizeOccurredAt,
@@ -41,7 +43,7 @@ const TrackVisitor = async (req, res) => {
 
     const now = new Date();
     const occurredAt = normalizeOccurredAt(req.body.occurredAt, now);
-    const location = resolveVisitorLocation(ipAddress);
+    const location = resolveVisitorLocation(ipAddress, req.headers);
     const existingVisitor = await VisitorProfileModel.findOne({ visitorId });
     const isNewVisit = !existingVisitor
       ? true
@@ -98,15 +100,15 @@ const TrackVisitor = async (req, res) => {
       });
     }
 
-    existingVisitor.ipAddress = ipAddress;
+    if (isPublicIp(ipAddress) || !isPublicIp(existingVisitor.ipAddress)) {
+      existingVisitor.ipAddress = ipAddress;
+    }
     existingVisitor.userAgent = userAgent;
     existingVisitor.referrer = referrer;
-    existingVisitor.country = location.country;
-    existingVisitor.region = location.region;
-    existingVisitor.city = location.city;
-    existingVisitor.timezone = location.timezone;
-    existingVisitor.latitude = location.latitude;
-    existingVisitor.longitude = location.longitude;
+    Object.assign(
+      existingVisitor,
+      buildVisitorLocationUpdate(existingVisitor, location)
+    );
 
     const lastSeenAt = existingVisitor.lastSeenAt
       ? new Date(existingVisitor.lastSeenAt)

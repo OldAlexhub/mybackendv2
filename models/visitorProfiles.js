@@ -57,6 +57,15 @@ const VisitorProfileSchema = new mongoose.Schema(
       type: Number,
       default: null,
     },
+    locationSource: {
+      type: String,
+      enum: ["edge", "geoip", "edge+geoip", "unavailable"],
+      default: "unavailable",
+    },
+    locationUpdatedAt: {
+      type: Date,
+      default: null,
+    },
     visitCount: {
       type: Number,
       default: 1,
@@ -139,6 +148,8 @@ const VisitorProfileSchema = new mongoose.Schema(
       },
     },
   },
+  // Visitor history is intentionally retained: do not add an `expires` option
+  // or TTL index to this schema.
   { timestamps: true }
 );
 

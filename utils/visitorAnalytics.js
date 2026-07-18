@@ -1,4 +1,5 @@
 import geoip from "geoip-lite";
+import { isIP } from "node:net";
 import VisitorProfileModel from "../models/visitorProfiles.js";
 import VisitorInteractionModel from "../models/visitors.js";
 
@@ -11,7 +12,49 @@ const RECENT_VISITOR_LIMIT = 50;
 const BOT_PATTERN =
   /bot|spider|crawler|preview|slurp|bingpreview|headless|wget|curl|python-requests|node-fetch|axios/i;
 const VISITOR_PROFILE_FIELDS =
-  "visitorId ipAddress city region country timezone visitCount pageViewCount totalEngagementMs referrer firstPage lastPage firstSeenAt lastSeenAt userAgent clientSignals";
+  "visitorId ipAddress city region country timezone locationSource locationUpdatedAt visitCount pageViewCount totalEngagementMs referrer firstPage lastPage firstSeenAt lastSeenAt userAgent clientSignals";
+
+const LOCATION_HEADER_NAMES = {
+  city: ["cf-ipcity", "x-vercel-ip-city", "cloudfront-viewer-city", "x-appengine-city"],
+  region: [
+    "cf-region-code",
+    "cf-region",
+    "x-vercel-ip-country-region",
+    "cloudfront-viewer-country-region",
+    "x-appengine-region",
+  ],
+  country: [
+    "cf-ipcountry",
+    "x-vercel-ip-country",
+    "cloudfront-viewer-country",
+    "x-appengine-country",
+  ],
+  timezone: [
+    "cf-timezone",
+    "x-vercel-ip-timezone",
+    "cloudfront-viewer-time-zone",
+  ],
+  latitude: [
+    "cf-iplatitude",
+    "x-vercel-ip-latitude",
+    "cloudfront-viewer-latitude",
+  ],
+  longitude: [
+    "cf-iplongitude",
+    "x-vercel-ip-longitude",
+    "cloudfront-viewer-longitude",
+  ],
+};
+
+const CLIENT_IP_HEADER_NAMES = [
+  "cf-connecting-ip",
+  "true-client-ip",
+  "cloudfront-viewer-address",
+  "x-nf-client-connection-ip",
+  "fly-client-ip",
+  "x-real-ip",
+  "x-forwarded-for",
+];
 
 const sanitizeText = (value, fallback = UNKNOWN_VALUE) => {
   if (typeof value !== "string") {
@@ -20,6 +63,55 @@ const sanitizeText = (value, fallback = UNKNOWN_VALUE) => {
 
   const trimmedValue = value.trim();
   return trimmedValue || fallback;
+};
+
+const isKnownValue = (value) => {
+  if (typeof value !== "string") {
+    return false;
+  }
+
+  const normalizedValue = value.trim().toLowerCase();
+  return !["", "unknown", "null", "undefined", "n/a", "-", "xx"].includes(
+    normalizedValue
+  );
+};
+
+const decodeHeaderValue = (value) => {
+  const rawValue = Array.isArray(value) ? value[0] : value;
+  const sanitizedValue = sanitizeText(`${rawValue || ""}`, "");
+
+  if (!sanitizedValue) {
+    return "";
+  }
+
+  try {
+    return decodeURIComponent(sanitizedValue.replace(/\+/g, "%20")).trim();
+  } catch (error) {
+    return sanitizedValue;
+  }
+};
+
+const getFirstHeaderValue = (headers = {}, names = []) => {
+  for (const name of names) {
+    const value = decodeHeaderValue(headers[name]);
+
+    if (isKnownValue(value)) {
+      return value;
+    }
+  }
+
+  return "";
+};
+
+const getHeaderCoordinate = (headers, names, min, max) => {
+  const headerValue = getFirstHeaderValue(headers, names);
+
+  if (!headerValue) {
+    return null;
+  }
+
+  const value = Number(headerValue);
+  return Number.isFinite(value) && value >= min && value <= max ? value : null;
 };
 
 const sanitizeBoolean = (value) => {
@@ -54,17 +146,26 @@ const sanitizeTextList = (values) => {
 
 const normalizeIp = (value) => {
   const rawIp = Array.isArray(value) ? value[0] : value;
-  const firstIp = `${rawIp || ""}`.split(",")[0].trim();
+  let firstIp = `${rawIp || ""}`.split(",")[0].trim().replace(/^"|"$/g, "");
 
   if (!firstIp) {
     return UNKNOWN_VALUE;
+  }
+
+  const bracketedIpv6Match = firstIp.match(/^\[([^\]]+)\](?::\d+)?$/);
+
+  if (bracketedIpv6Match) {
+    firstIp = bracketedIpv6Match[1];
+  } else {
+    firstIp = firstIp.replace(/^(\d{1,3}(?:\.\d{1,3}){3}):\d+$/, "$1");
   }
 
   if (firstIp === "::1") {
     return "127.0.0.1";
   }
 
-  return firstIp.replace(/^::ffff:/, "");
+  firstIp = firstIp.replace(/^::ffff:/i, "").split("%")[0];
+  return isIP(firstIp) ? firstIp : UNKNOWN_VALUE;
 };
 
 const isPrivateIp = (ipAddress) => {
@@ -75,14 +176,25 @@ const isPrivateIp = (ipAddress) => {
   return (
     ipAddress === "127.0.0.1" ||
     ipAddress === "0.0.0.0" ||
+    ipAddress === "::" ||
+    ipAddress === "::1" ||
     ipAddress.startsWith("10.") ||
     ipAddress.startsWith("192.168.") ||
-    /^172\.(1[6-9]|2\d|3[0-1])\./.test(ipAddress)
+    ipAddress.startsWith("169.254.") ||
+    /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(ipAddress) ||
+    /^172\.(1[6-9]|2\d|3[0-1])\./.test(ipAddress) ||
+    /^f[cd][0-9a-f]{2}:/i.test(ipAddress) ||
+    /^fe[89ab][0-9a-f]:/i.test(ipAddress)
   );
 };
 
+export const isPublicIp = (ipAddress) =>
+  isIP(ipAddress) > 0 && !isPrivateIp(ipAddress);
+
 export const extractVisitorMetadata = (req) => {
-  const forwardedIp = req.headers["x-forwarded-for"];
+  const forwardedIp = CLIENT_IP_HEADER_NAMES.map(
+    (name) => req.headers[name]
+  ).find(Boolean);
   const ipAddress = normalizeIp(forwardedIp || req.ip);
   const userAgent = sanitizeText(req.headers["user-agent"]);
   const referrer = sanitizeText(req.headers.referer, "Direct");
@@ -95,39 +207,85 @@ export const extractVisitorMetadata = (req) => {
   };
 };
 
-export const resolveVisitorLocation = (ipAddress) => {
-  if (isPrivateIp(ipAddress)) {
-    return {
-      country: UNKNOWN_VALUE,
-      region: UNKNOWN_VALUE,
-      city: UNKNOWN_VALUE,
-      timezone: UNKNOWN_VALUE,
-      latitude: null,
-      longitude: null,
-    };
-  }
-
-  const geoRecord = geoip.lookup(ipAddress);
-
-  if (!geoRecord) {
-    return {
-      country: UNKNOWN_VALUE,
-      region: UNKNOWN_VALUE,
-      city: UNKNOWN_VALUE,
-      timezone: UNKNOWN_VALUE,
-      latitude: null,
-      longitude: null,
-    };
-  }
+export const resolveVisitorLocation = (ipAddress, headers = {}) => {
+  const edgeLocation = {
+    city: getFirstHeaderValue(headers, LOCATION_HEADER_NAMES.city),
+    region: getFirstHeaderValue(headers, LOCATION_HEADER_NAMES.region),
+    country: getFirstHeaderValue(headers, LOCATION_HEADER_NAMES.country).toUpperCase(),
+    timezone: getFirstHeaderValue(headers, LOCATION_HEADER_NAMES.timezone),
+    latitude: getHeaderCoordinate(
+      headers,
+      LOCATION_HEADER_NAMES.latitude,
+      -90,
+      90
+    ),
+    longitude: getHeaderCoordinate(
+      headers,
+      LOCATION_HEADER_NAMES.longitude,
+      -180,
+      180
+    ),
+  };
+  const geoRecord = isPublicIp(ipAddress) ? geoip.lookup(ipAddress) : null;
+  const geoLocation = {
+    country: sanitizeText(geoRecord?.country, ""),
+    region: sanitizeText(geoRecord?.region, ""),
+    city: sanitizeText(geoRecord?.city, ""),
+    timezone: sanitizeText(geoRecord?.timezone, ""),
+    latitude: Array.isArray(geoRecord?.ll) ? geoRecord.ll[0] : null,
+    longitude: Array.isArray(geoRecord?.ll) ? geoRecord.ll[1] : null,
+  };
+  const edgeResolved = Object.values(edgeLocation).some(
+    (value) => value !== "" && value !== null
+  );
+  const geoResolved = Object.values(geoLocation).some(
+    (value) => value !== "" && value !== null
+  );
+  const preferKnownText = (edgeValue, geoValue) =>
+    sanitizeText(isKnownValue(edgeValue) ? edgeValue : geoValue);
 
   return {
-    country: sanitizeText(geoRecord.country),
-    region: sanitizeText(geoRecord.region),
-    city: sanitizeText(geoRecord.city),
-    timezone: sanitizeText(geoRecord.timezone),
-    latitude: Array.isArray(geoRecord.ll) ? geoRecord.ll[0] : null,
-    longitude: Array.isArray(geoRecord.ll) ? geoRecord.ll[1] : null,
+    country: preferKnownText(edgeLocation.country, geoLocation.country),
+    region: preferKnownText(edgeLocation.region, geoLocation.region),
+    city: preferKnownText(edgeLocation.city, geoLocation.city),
+    timezone: preferKnownText(edgeLocation.timezone, geoLocation.timezone),
+    latitude: edgeLocation.latitude ?? geoLocation.latitude,
+    longitude: edgeLocation.longitude ?? geoLocation.longitude,
+    locationSource:
+      edgeResolved && geoResolved
+        ? "edge+geoip"
+        : edgeResolved
+          ? "edge"
+          : geoResolved
+            ? "geoip"
+            : "unavailable",
+    locationUpdatedAt: edgeResolved || geoResolved ? new Date() : null,
   };
+};
+
+export const buildVisitorLocationUpdate = (currentLocation, nextLocation) => {
+  const update = {};
+
+  ["country", "region", "city", "timezone"].forEach((field) => {
+    if (isKnownValue(nextLocation?.[field])) {
+      update[field] = nextLocation[field];
+    }
+  });
+
+  ["latitude", "longitude"].forEach((field) => {
+    if (Number.isFinite(nextLocation?.[field])) {
+      update[field] = nextLocation[field];
+    }
+  });
+
+  if (Object.keys(update).length) {
+    update.locationSource = isKnownValue(nextLocation?.locationSource)
+      ? nextLocation.locationSource
+      : currentLocation?.locationSource || "unavailable";
+    update.locationUpdatedAt = nextLocation?.locationUpdatedAt || new Date();
+  }
+
+  return update;
 };
 
 export const normalizeEngagementMs = (value) =>
@@ -196,43 +354,54 @@ export const shouldCountNewVisit = (lastVisitAt, now = new Date()) => {
 };
 
 export const buildVisitorSummary = async () => {
-  const [
-    totalUniqueVisitors,
-    totalVisitsAggregate,
-    totalCountries,
-    totalEngagementAggregate,
-  ] =
-    await Promise.all([
-      VisitorProfileModel.countDocuments(),
-      VisitorProfileModel.aggregate([
-        {
-          $group: {
-            _id: null,
-            totalVisits: { $sum: "$visitCount" },
+  const [profileSummaryAggregate, totalCountries] = await Promise.all([
+    VisitorProfileModel.aggregate([
+      {
+        $group: {
+          _id: null,
+          totalUniqueVisitors: { $sum: 1 },
+          totalVisits: { $sum: "$visitCount" },
+          totalEngagementMs: { $sum: "$totalEngagementMs" },
+          cityResolvedVisitors: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $ne: ["$city", null] },
+                    { $ne: ["$city", ""] },
+                    { $ne: ["$city", UNKNOWN_VALUE] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
           },
+          oldestVisitorAt: { $min: "$firstSeenAt" },
         },
-      ]),
-      VisitorProfileModel.distinct("country", {
-        country: { $nin: [null, "", UNKNOWN_VALUE] },
-      }).then((countries) => countries.length),
-      VisitorProfileModel.aggregate([
-        {
-          $group: {
-            _id: null,
-            totalEngagementMs: { $sum: "$totalEngagementMs" },
-          },
-        },
-      ]),
-    ]);
-
-  const totalVisits = totalVisitsAggregate[0]?.totalVisits || 0;
-  const totalEngagementMs = totalEngagementAggregate[0]?.totalEngagementMs || 0;
+      },
+    ]),
+    VisitorProfileModel.distinct("country", {
+      country: { $nin: [null, "", UNKNOWN_VALUE] },
+    }).then((countries) => countries.length),
+  ]);
+  const profileSummary = profileSummaryAggregate[0] || {};
+  const totalUniqueVisitors = profileSummary.totalUniqueVisitors || 0;
+  const totalVisits = profileSummary.totalVisits || 0;
+  const totalEngagementMs = profileSummary.totalEngagementMs || 0;
+  const cityResolvedVisitors = profileSummary.cityResolvedVisitors || 0;
 
   return {
     totalUniqueVisitors,
     totalVisits,
     totalCountries,
     totalEngagementMs,
+    cityResolvedVisitors,
+    cityUnknownVisitors: Math.max(0, totalUniqueVisitors - cityResolvedVisitors),
+    cityCoverageRate: totalUniqueVisitors
+      ? cityResolvedVisitors / totalUniqueVisitors
+      : 0,
+    oldestVisitorAt: profileSummary.oldestVisitorAt || null,
     averageEngagementMsPerVisitor: totalUniqueVisitors
       ? Math.round(totalEngagementMs / totalUniqueVisitors)
       : 0,
@@ -557,6 +726,14 @@ export const buildVisitorAnalytics = async ({ includeAllVisitors = false } = {})
       })),
     },
     recentVisitors,
+    visitorRecords: {
+      total: summary.totalUniqueVisitors,
+      returned: recentVisitors.length,
+      defaultLimit: RECENT_VISITOR_LIMIT,
+      retentionPolicy: "all_time",
+      automaticDeletionEnabled: false,
+      oldestRetainedAt: summary.oldestVisitorAt,
+    },
     ...(includeAllVisitors ? { allVisitors: visitorProfiles } : {}),
   };
 };

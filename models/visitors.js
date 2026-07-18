@@ -54,6 +54,8 @@ const VisitorInteractionSchema = new mongoose.Schema(
       min: 0,
     },
   },
+  // Interaction history is intentionally retained: do not add an `expires`
+  // option or TTL index to this schema.
   { timestamps: true } // Adds `createdAt` and `updatedAt`
 );
 
