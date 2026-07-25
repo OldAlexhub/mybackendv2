@@ -27,7 +27,23 @@ const AndroidAppSchema = new mongoose.Schema(
       enum: ["active", "maintenance", "deprecated"],
       default: "active",
     },
+    iconUrl: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    rating: {
+      type: Number,
+      min: 0,
+      max: 5,
+      default: null,
+    },
     playStoreLink: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    appStoreLink: {
       type: String,
       trim: true,
       default: "",

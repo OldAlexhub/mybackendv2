@@ -3,7 +3,7 @@ import AndroidAppModel from "../models/androidApps.js";
 const UpdateAndroidApp = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, description, packageName, category, status, playStoreLink, githubLink, releasedAt, notes } = req.body;
+    const { name, description, packageName, category, status, iconUrl, rating, playStoreLink, appStoreLink, githubLink, releasedAt, notes } = req.body;
 
     if (!name) {
       return res.status(400).json({ message: "App name is required." });
@@ -11,7 +11,20 @@ const UpdateAndroidApp = async (req, res) => {
 
     const updated = await AndroidAppModel.findByIdAndUpdate(
       id,
-      { name, description, packageName, category, status, playStoreLink, githubLink, releasedAt: releasedAt || null, notes },
+      {
+        name,
+        description,
+        packageName,
+        category,
+        status,
+        iconUrl,
+        rating: rating === "" || rating === undefined ? null : rating,
+        playStoreLink,
+        appStoreLink,
+        githubLink,
+        releasedAt: releasedAt || null,
+        notes,
+      },
       { new: true, runValidators: true }
     );
 

@@ -2,7 +2,7 @@ import AndroidAppModel from "../models/androidApps.js";
 
 const PostAndroidApp = async (req, res) => {
   try {
-    const { name, description, packageName, category, status, playStoreLink, githubLink, releasedAt, notes } = req.body;
+    const { name, description, packageName, category, status, iconUrl, rating, playStoreLink, appStoreLink, githubLink, releasedAt, notes } = req.body;
 
     if (!name) {
       return res.status(400).json({ message: "App name is required." });
@@ -14,7 +14,10 @@ const PostAndroidApp = async (req, res) => {
       packageName,
       category,
       status,
+      iconUrl,
+      rating: rating === "" || rating === undefined ? null : rating,
       playStoreLink,
+      appStoreLink,
       githubLink,
       releasedAt: releasedAt || null,
       notes,
