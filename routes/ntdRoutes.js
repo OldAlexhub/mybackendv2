@@ -10,6 +10,7 @@ const asyncRoute = (handler) => async (req, res) => {
     res.json(payload);
   } catch (error) {
     const status = error.statusCode || 503;
+    console.error(`[NTD] ${req.method} ${req.originalUrl}: ${error.message}`);
     res.status(status).json({
       error: status === 404 ? error.message : "The official NTD source is temporarily unavailable.",
       detail: process.env.NODE_ENV === "development" ? error.message : undefined,
