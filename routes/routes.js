@@ -19,8 +19,11 @@ import GetAndroidApps from "../controllers/GetAndroidApps.js";
 import PostAndroidApp from "../controllers/PostAndroidApp.js";
 import UpdateAndroidApp from "../controllers/UpdateAndroidApp.js";
 import DeleteAndroidApp from "../controllers/DeleteAndroidApp.js";
+import ntdRoutes from "./ntdRoutes.js";
 
 const router = Router();
+
+router.use(ntdRoutes);
 
 //router.post("/signup", Signup);
 router.post("/login", login);
