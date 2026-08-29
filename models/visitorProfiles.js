@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { AcquisitionSchema, DeviceSchema } from "./analyticsSubschemas.js";
 
 const VisitorProfileSchema = new mongoose.Schema(
   {
@@ -22,6 +23,18 @@ const VisitorProfileSchema = new mongoose.Schema(
     referrer: {
       type: String,
       default: "Direct",
+    },
+    firstAcquisition: {
+      type: AcquisitionSchema,
+      default: undefined,
+    },
+    latestAcquisition: {
+      type: AcquisitionSchema,
+      default: undefined,
+    },
+    device: {
+      type: DeviceSchema,
+      default: undefined,
     },
     firstPage: {
       type: String,

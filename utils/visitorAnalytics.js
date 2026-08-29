@@ -12,7 +12,7 @@ const RECENT_VISITOR_LIMIT = 50;
 const BOT_PATTERN =
   /bot|spider|crawler|preview|slurp|bingpreview|headless|wget|curl|python-requests|node-fetch|axios/i;
 const VISITOR_PROFILE_FIELDS =
-  "visitorId ipAddress city region country timezone locationSource locationUpdatedAt visitCount pageViewCount totalEngagementMs referrer firstPage lastPage firstSeenAt lastSeenAt userAgent clientSignals";
+  "visitorId ipAddress city region country timezone locationSource locationUpdatedAt visitCount pageViewCount totalEngagementMs referrer firstAcquisition latestAcquisition device firstPage lastPage firstSeenAt lastSeenAt userAgent clientSignals";
 
 const LOCATION_HEADER_NAMES = {
   city: ["cf-ipcity", "x-vercel-ip-city", "cloudfront-viewer-city", "x-appengine-city"],
@@ -132,6 +132,99 @@ const sanitizeNumber = (value, fallback = 0, min = 0, max = Number.MAX_SAFE_INTE
   return Math.min(max, Math.max(min, Math.round(normalizedValue)));
 };
 
+const sanitizeAnalyticsText = (value, maxLength = 500, fallback = "") =>
+  sanitizeText(value, fallback).slice(0, maxLength);
+
+const getHostname = (value) => {
+  try {
+    return new URL(value).hostname.replace(/^www\./i, "");
+  } catch (error) {
+    return "";
+  }
+};
+
+export const normalizeAcquisition = (value, fallbackReferrer = "") => {
+  const rawAcquisition =
+    value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const referrer = sanitizeAnalyticsText(
+    rawAcquisition.referrer,
+    1000,
+    isKnownValue(fallbackReferrer) ? fallbackReferrer : ""
+  );
+  const referrerHost = sanitizeAnalyticsText(
+    rawAcquisition.referrerHost,
+    255,
+    getHostname(referrer)
+  );
+  const source = sanitizeAnalyticsText(
+    rawAcquisition.source,
+    120,
+    referrerHost || "Direct"
+  );
+  const medium = sanitizeAnalyticsText(
+    rawAcquisition.medium,
+    80,
+    referrerHost ? "referral" : "none"
+  );
+  const capturedAt = new Date(rawAcquisition.capturedAt || Date.now());
+
+  return {
+    source,
+    medium,
+    channel: sanitizeAnalyticsText(
+      rawAcquisition.channel,
+      80,
+      referrerHost ? "Referral" : "Direct"
+    ),
+    campaign: sanitizeAnalyticsText(rawAcquisition.campaign, 160),
+    term: sanitizeAnalyticsText(rawAcquisition.term, 160),
+    content: sanitizeAnalyticsText(rawAcquisition.content, 160),
+    referrer,
+    referrerHost,
+    landingPage: sanitizeAnalyticsText(rawAcquisition.landingPage, 1000, "/"),
+    clickProvider: sanitizeAnalyticsText(rawAcquisition.clickProvider, 80),
+    redirectCount: sanitizeNumber(rawAcquisition.redirectCount, 0, 0, 20),
+    capturedAt: Number.isNaN(capturedAt.getTime()) ? new Date() : capturedAt,
+  };
+};
+
+export const parseUserAgent = (value) => {
+  const userAgent = sanitizeText(value, "");
+  const type = /ipad|tablet|kindle|silk/i.test(userAgent)
+    ? "Tablet"
+    : /mobile|iphone|ipod|android/i.test(userAgent)
+      ? "Mobile"
+      : "Desktop";
+  const browser = /edg\//i.test(userAgent)
+    ? "Edge"
+    : /opr\//i.test(userAgent)
+      ? "Opera"
+      : /samsungbrowser/i.test(userAgent)
+        ? "Samsung Internet"
+        : /firefox|fxios/i.test(userAgent)
+          ? "Firefox"
+          : /chrome|crios/i.test(userAgent)
+            ? "Chrome"
+            : /safari/i.test(userAgent)
+              ? "Safari"
+              : "Other";
+  const operatingSystem = /windows/i.test(userAgent)
+    ? "Windows"
+    : /iphone|ipad|ipod/i.test(userAgent)
+      ? "iOS"
+      : /android/i.test(userAgent)
+        ? "Android"
+        : /mac os|macintosh/i.test(userAgent)
+          ? "macOS"
+          : /cros/i.test(userAgent)
+            ? "ChromeOS"
+            : /linux/i.test(userAgent)
+              ? "Linux"
+              : "Other";
+
+  return { type, browser, operatingSystem };
+};
+
 const sanitizeTextList = (values) => {
   if (!Array.isArray(values)) {
     return [];
@@ -243,9 +336,16 @@ export const resolveVisitorLocation = (ipAddress, headers = {}) => {
   );
   const preferKnownText = (edgeValue, geoValue) =>
     sanitizeText(isKnownValue(edgeValue) ? edgeValue : geoValue);
+  const preferredCountry = preferKnownText(
+    edgeLocation.country,
+    geoLocation.country
+  ).toUpperCase();
+  const country = /^[A-Z]{2}$/.test(preferredCountry)
+    ? preferredCountry
+    : UNKNOWN_VALUE;
 
   return {
-    country: preferKnownText(edgeLocation.country, geoLocation.country),
+    country,
     region: preferKnownText(edgeLocation.region, geoLocation.region),
     city: preferKnownText(edgeLocation.city, geoLocation.city),
     timezone: preferKnownText(edgeLocation.timezone, geoLocation.timezone),
@@ -361,7 +461,14 @@ export const buildVisitorSummary = async () => {
           _id: null,
           totalUniqueVisitors: { $sum: 1 },
           totalVisits: { $sum: "$visitCount" },
+          totalPageViews: { $sum: "$pageViewCount" },
           totalEngagementMs: { $sum: "$totalEngagementMs" },
+          returningVisitors: {
+            $sum: { $cond: [{ $gt: ["$visitCount", 1] }, 1, 0] },
+          },
+          engagedVisitors: {
+            $sum: { $cond: [{ $gte: ["$totalEngagementMs", 30000] }, 1, 0] },
+          },
           cityResolvedVisitors: {
             $sum: {
               $cond: [
@@ -388,14 +495,25 @@ export const buildVisitorSummary = async () => {
   const profileSummary = profileSummaryAggregate[0] || {};
   const totalUniqueVisitors = profileSummary.totalUniqueVisitors || 0;
   const totalVisits = profileSummary.totalVisits || 0;
+  const totalPageViews = profileSummary.totalPageViews || 0;
   const totalEngagementMs = profileSummary.totalEngagementMs || 0;
+  const returningVisitors = profileSummary.returningVisitors || 0;
+  const engagedVisitors = profileSummary.engagedVisitors || 0;
   const cityResolvedVisitors = profileSummary.cityResolvedVisitors || 0;
 
   return {
     totalUniqueVisitors,
     totalVisits,
+    totalPageViews,
     totalCountries,
     totalEngagementMs,
+    returningVisitors,
+    engagedVisitors,
+    returningVisitorRate: totalUniqueVisitors
+      ? returningVisitors / totalUniqueVisitors
+      : 0,
+    engagementRate: totalUniqueVisitors ? engagedVisitors / totalUniqueVisitors : 0,
+    pagesPerVisit: totalVisits ? totalPageViews / totalVisits : 0,
     cityResolvedVisitors,
     cityUnknownVisitors: Math.max(0, totalUniqueVisitors - cityResolvedVisitors),
     cityCoverageRate: totalUniqueVisitors
@@ -424,247 +542,169 @@ const fetchVisitorProfiles = async (limit = null) => {
   return query.lean();
 };
 
+const aggregateProfileDimension = (
+  expression,
+  { fallback = "Unattributed", exclude = [] } = {}
+) =>
+  VisitorProfileModel.aggregate([
+    {
+      $group: {
+        _id: { $ifNull: [expression, fallback] },
+        visitors: { $sum: 1 },
+        visits: { $sum: { $ifNull: ["$visitCount", 0] } },
+      },
+    },
+    ...(exclude.length
+      ? [{ $match: { _id: { $nin: exclude } } }]
+      : []),
+    { $sort: { visitors: -1, _id: 1 } },
+    { $limit: 8 },
+  ]);
+
 export const buildVisitorAnalytics = async ({ includeAllVisitors = false } = {}) => {
-  const dailyTrafficWindowStart = new Date(
-    Date.now() - 14 * 24 * 60 * 60 * 1000
-  );
+  const activeWindow = (days) => ({
+    lastSeenAt: { $gte: new Date(Date.now() - days * 24 * 60 * 60 * 1000) },
+  });
   const popularPagesWindowStart = new Date(
     Date.now() - 30 * 24 * 60 * 60 * 1000
   );
 
   const [
     summary,
-    returningVisitors,
+    activeVisitorsLast7Days,
     activeVisitorsLast30Days,
     topCountries,
     topCities,
+    topSources,
+    topChannels,
+    topCampaigns,
+    topLandingPages,
     topReferrers,
+    deviceTypes,
+    browsers,
+    operatingSystems,
     visitorProfiles,
     dailyTraffic,
     popularPages,
-    storageInsights,
-    topCookieNames,
-  ] =
-    await Promise.all([
-      buildVisitorSummary(),
-      VisitorProfileModel.countDocuments({ visitCount: { $gt: 1 } }),
-      VisitorProfileModel.countDocuments({
-        lastSeenAt: {
-          $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+  ] = await Promise.all([
+    buildVisitorSummary(),
+    VisitorProfileModel.countDocuments(activeWindow(7)),
+    VisitorProfileModel.countDocuments(activeWindow(30)),
+    aggregateProfileDimension("$country", {
+      fallback: UNKNOWN_VALUE,
+      exclude: [null, "", UNKNOWN_VALUE],
+    }),
+    VisitorProfileModel.aggregate([
+      { $match: { city: { $nin: [null, "", UNKNOWN_VALUE] } } },
+      {
+        $group: {
+          _id: { city: "$city", region: "$region", country: "$country" },
+          visitors: { $sum: 1 },
         },
-      }),
-      VisitorProfileModel.aggregate([
-        {
-          $match: {
-            country: { $nin: [null, "", UNKNOWN_VALUE] },
-          },
-        },
-        {
-          $group: {
-            _id: "$country",
-            visitors: { $sum: 1 },
-          },
-        },
-        { $sort: { visitors: -1, _id: 1 } },
-        { $limit: 8 },
-      ]),
-      VisitorProfileModel.aggregate([
-        {
-          $match: {
-            city: { $nin: [null, "", UNKNOWN_VALUE] },
-          },
-        },
-        {
-          $group: {
-            _id: {
-              city: "$city",
-              region: "$region",
-              country: "$country",
+      },
+      { $sort: { visitors: -1, "_id.city": 1 } },
+      { $limit: 8 },
+    ]),
+    aggregateProfileDimension("$firstAcquisition.source"),
+    aggregateProfileDimension("$firstAcquisition.channel"),
+    aggregateProfileDimension("$firstAcquisition.campaign", {
+      fallback: "",
+      exclude: [null, ""],
+    }),
+    aggregateProfileDimension({
+      $ifNull: ["$firstAcquisition.landingPage", "$firstPage"],
+    }),
+    aggregateProfileDimension("$firstAcquisition.referrerHost", {
+      fallback: "",
+      exclude: [null, ""],
+    }),
+    aggregateProfileDimension("$device.type", { fallback: "Unclassified" }),
+    aggregateProfileDimension("$device.browser", { fallback: "Unclassified" }),
+    aggregateProfileDimension("$device.operatingSystem", {
+      fallback: "Unclassified",
+    }),
+    includeAllVisitors
+      ? fetchVisitorProfiles()
+      : fetchVisitorProfiles(RECENT_VISITOR_LIMIT),
+    VisitorInteractionModel.aggregate([
+      { $match: { eventType: "page_view" } },
+      {
+        $group: {
+          _id: {
+            date: {
+              $dateToString: { format: "%Y-%m-%d", date: "$timestamp" },
             },
-            visitors: { $sum: 1 },
+            visitorId: "$sessionId",
           },
+          pageViews: { $sum: 1 },
         },
-        { $sort: { visitors: -1, "_id.city": 1 } },
-        { $limit: 8 },
-      ]),
-      VisitorProfileModel.aggregate([
-        {
-          $match: {
-            referrer: { $nin: [null, "", "Direct"] },
-          },
+      },
+      {
+        $group: {
+          _id: "$_id.date",
+          uniqueVisitors: { $sum: 1 },
+          pageViews: { $sum: "$pageViews" },
         },
-        {
-          $group: {
-            _id: "$referrer",
-            visitors: { $sum: 1 },
-          },
+      },
+      { $sort: { _id: 1 } },
+    ]),
+    VisitorInteractionModel.aggregate([
+      {
+        $match: {
+          eventType: "page_view",
+          timestamp: { $gte: popularPagesWindowStart },
         },
-        { $sort: { visitors: -1, _id: 1 } },
-        { $limit: 8 },
-      ]),
-      includeAllVisitors
-        ? fetchVisitorProfiles()
-        : fetchVisitorProfiles(RECENT_VISITOR_LIMIT),
-      VisitorInteractionModel.aggregate([
-        {
-          $match: {
-            eventType: "page_view",
-            timestamp: { $gte: dailyTrafficWindowStart },
-          },
+      },
+      {
+        $group: {
+          _id: "$pageUrl",
+          pageViews: { $sum: 1 },
+          uniqueVisitors: { $addToSet: "$sessionId" },
         },
-        {
-          $group: {
-            _id: {
-              date: {
-                $dateToString: {
-                  format: "%Y-%m-%d",
-                  date: "$timestamp",
-                },
-              },
-              visitorId: "$sessionId",
-            },
-            pageViews: { $sum: 1 },
-          },
+      },
+      {
+        $project: {
+          _id: 1,
+          pageViews: 1,
+          uniqueVisitors: { $size: "$uniqueVisitors" },
         },
-        {
-          $group: {
-            _id: "$_id.date",
-            uniqueVisitors: { $sum: 1 },
-            pageViews: { $sum: "$pageViews" },
-          },
-        },
-        { $sort: { _id: 1 } },
-      ]),
-      VisitorInteractionModel.aggregate([
-        {
-          $match: {
-            eventType: "page_view",
-            timestamp: { $gte: popularPagesWindowStart },
-          },
-        },
-        {
-          $group: {
-            _id: "$pageUrl",
-            pageViews: { $sum: 1 },
-            uniqueVisitors: { $addToSet: "$sessionId" },
-          },
-        },
-        {
-          $project: {
-            _id: 1,
-            pageViews: 1,
-            uniqueVisitors: { $size: "$uniqueVisitors" },
-          },
-        },
-        { $sort: { pageViews: -1, _id: 1 } },
-        { $limit: 8 },
-      ]),
-      VisitorProfileModel.aggregate([
-        {
-          $group: {
-            _id: null,
-            trackedProfiles: {
-              $sum: {
-                $cond: [{ $ne: ["$clientSignals.lastCapturedAt", null] }, 1, 0],
-              },
-            },
-            cookiesEnabledVisitors: {
-              $sum: {
-                $cond: [{ $eq: ["$clientSignals.cookiesEnabled", true] }, 1, 0],
-              },
-            },
-            totalCookieCount: { $sum: { $ifNull: ["$clientSignals.cookieCount", 0] } },
-            totalLocalStorageItems: {
-              $sum: { $ifNull: ["$clientSignals.localStorageItemCount", 0] },
-            },
-            totalLocalStorageBytes: {
-              $sum: { $ifNull: ["$clientSignals.localStorageBytes", 0] },
-            },
-            totalSessionStorageItems: {
-              $sum: { $ifNull: ["$clientSignals.sessionStorageItemCount", 0] },
-            },
-            totalSessionStorageBytes: {
-              $sum: { $ifNull: ["$clientSignals.sessionStorageBytes", 0] },
-            },
-            cacheStorageSupportedVisitors: {
-              $sum: {
-                $cond: [
-                  { $eq: ["$clientSignals.cacheStorageSupported", true] },
-                  1,
-                  0,
-                ],
-              },
-            },
-            visitorsWithCacheEntries: {
-              $sum: {
-                $cond: [{ $gt: ["$clientSignals.cacheEntryCount", 0] }, 1, 0],
-              },
-            },
-            totalCacheBuckets: {
-              $sum: { $ifNull: ["$clientSignals.cacheBucketCount", 0] },
-            },
-            totalCacheEntries: {
-              $sum: { $ifNull: ["$clientSignals.cacheEntryCount", 0] },
-            },
-          },
-        },
-      ]),
-      VisitorProfileModel.aggregate([
-        {
-          $match: {
-            "clientSignals.cookieNames.0": { $exists: true },
-          },
-        },
-        { $unwind: "$clientSignals.cookieNames" },
-        {
-          $group: {
-            _id: "$clientSignals.cookieNames",
-            visitors: { $sum: 1 },
-          },
-        },
-        { $sort: { visitors: -1, _id: 1 } },
-        { $limit: 8 },
-      ]),
-    ]);
+      },
+      { $sort: { pageViews: -1, _id: 1 } },
+      { $limit: 8 },
+    ]),
+  ]);
 
-  const storageSummary = storageInsights[0] || {
-    trackedProfiles: 0,
-    cookiesEnabledVisitors: 0,
-    totalCookieCount: 0,
-    totalLocalStorageItems: 0,
-    totalLocalStorageBytes: 0,
-    totalSessionStorageItems: 0,
-    totalSessionStorageBytes: 0,
-    cacheStorageSupportedVisitors: 0,
-    visitorsWithCacheEntries: 0,
-    totalCacheBuckets: 0,
-    totalCacheEntries: 0,
-  };
-  const trackedProfiles = storageSummary.trackedProfiles || 0;
   const recentVisitors = includeAllVisitors
     ? visitorProfiles.slice(0, RECENT_VISITOR_LIMIT)
     : visitorProfiles;
+  const mapDimension = (items, key) =>
+    items.map((item) => ({
+      [key]: item._id,
+      visitors: item.visitors,
+      visits: item.visits,
+    }));
 
   return {
     summary: {
       ...summary,
-      returningVisitors,
+      activeVisitorsLast7Days,
       activeVisitorsLast30Days,
     },
-    topCountries: topCountries.map((item) => ({
-      country: item._id,
-      visitors: item.visitors,
-    })),
+    topCountries: mapDimension(topCountries, "country"),
     topCities: topCities.map((item) => ({
       city: item._id.city,
       region: item._id.region,
       country: item._id.country,
       visitors: item.visitors,
     })),
-    topReferrers: topReferrers.map((item) => ({
-      referrer: item._id,
-      visitors: item.visitors,
-    })),
+    topSources: mapDimension(topSources, "source"),
+    topChannels: mapDimension(topChannels, "channel"),
+    topCampaigns: mapDimension(topCampaigns, "campaign"),
+    topLandingPages: mapDimension(topLandingPages, "landingPage"),
+    topReferrers: mapDimension(topReferrers, "referrer"),
+    deviceBreakdown: mapDimension(deviceTypes, "device"),
+    browserBreakdown: mapDimension(browsers, "browser"),
+    operatingSystemBreakdown: mapDimension(operatingSystems, "operatingSystem"),
     dailyTraffic: dailyTraffic.map((item) => ({
       date: item._id,
       uniqueVisitors: item.uniqueVisitors,
@@ -675,56 +715,6 @@ export const buildVisitorAnalytics = async ({ includeAllVisitors = false } = {})
       pageViews: item.pageViews,
       uniqueVisitors: item.uniqueVisitors,
     })),
-    storageInsights: {
-      trackedProfiles,
-      coverageRate: summary.totalUniqueVisitors
-        ? trackedProfiles / summary.totalUniqueVisitors
-        : 0,
-      cookiesEnabledVisitors: storageSummary.cookiesEnabledVisitors || 0,
-      averageCookieCount: trackedProfiles
-        ? Number(
-            (
-              (storageSummary.totalCookieCount || 0) /
-              trackedProfiles
-            ).toFixed(1)
-          )
-        : 0,
-      averageLocalStorageItems: trackedProfiles
-        ? Number(
-            (
-              (storageSummary.totalLocalStorageItems || 0) /
-              trackedProfiles
-            ).toFixed(1)
-          )
-        : 0,
-      averageLocalStorageBytes: trackedProfiles
-        ? Math.round(
-            (storageSummary.totalLocalStorageBytes || 0) / trackedProfiles
-          )
-        : 0,
-      averageSessionStorageItems: trackedProfiles
-        ? Number(
-            (
-              (storageSummary.totalSessionStorageItems || 0) /
-              trackedProfiles
-            ).toFixed(1)
-          )
-        : 0,
-      averageSessionStorageBytes: trackedProfiles
-        ? Math.round(
-            (storageSummary.totalSessionStorageBytes || 0) / trackedProfiles
-          )
-        : 0,
-      cacheStorageSupportedVisitors:
-        storageSummary.cacheStorageSupportedVisitors || 0,
-      visitorsWithCacheEntries: storageSummary.visitorsWithCacheEntries || 0,
-      totalCacheBuckets: storageSummary.totalCacheBuckets || 0,
-      totalCacheEntries: storageSummary.totalCacheEntries || 0,
-      topCookieNames: topCookieNames.map((item) => ({
-        name: item._id,
-        visitors: item.visitors,
-      })),
-    },
     recentVisitors,
     visitorRecords: {
       total: summary.totalUniqueVisitors,

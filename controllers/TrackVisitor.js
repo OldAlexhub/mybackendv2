@@ -5,9 +5,11 @@ import {
   buildVisitorSummary,
   extractVisitorMetadata,
   isPublicIp,
+  normalizeAcquisition,
   normalizeClientSignals,
   normalizeEngagementMs,
   normalizeOccurredAt,
+  parseUserAgent,
   resolveVisitorLocation,
   shouldCountNewVisit,
 } from "../utils/visitorAnalytics.js";
@@ -44,6 +46,8 @@ const TrackVisitor = async (req, res) => {
     const now = new Date();
     const occurredAt = normalizeOccurredAt(req.body.occurredAt, now);
     const location = resolveVisitorLocation(ipAddress, req.headers);
+    const acquisition = normalizeAcquisition(req.body.acquisition, referrer);
+    const device = parseUserAgent(userAgent);
     const existingVisitor = await VisitorProfileModel.findOne({ visitorId });
     const isNewVisit = !existingVisitor
       ? true
@@ -55,6 +59,10 @@ const TrackVisitor = async (req, res) => {
         ipAddress,
         userAgent,
         referrer,
+        acquisition,
+        device,
+        isVisitStart: isNewVisit,
+        isReturningVisit: Boolean(existingVisitor && isNewVisit),
         eventType: "page_view",
         pageUrl,
         timestamp: occurredAt,
@@ -65,6 +73,8 @@ const TrackVisitor = async (req, res) => {
         ipAddress,
         userAgent,
         referrer,
+        acquisition,
+        device,
         eventType: "engagement",
         pageUrl,
         timestamp: occurredAt,
@@ -77,7 +87,10 @@ const TrackVisitor = async (req, res) => {
         visitorId,
         ipAddress,
         userAgent,
-        referrer,
+        referrer: acquisition.referrer || referrer,
+        firstAcquisition: acquisition,
+        latestAcquisition: acquisition,
+        device,
         firstPage: pageUrl,
         lastPage: pageUrl,
         firstSeenAt: occurredAt,
@@ -104,7 +117,19 @@ const TrackVisitor = async (req, res) => {
       existingVisitor.ipAddress = ipAddress;
     }
     existingVisitor.userAgent = userAgent;
-    existingVisitor.referrer = referrer;
+    existingVisitor.device = device;
+    if (!existingVisitor.firstAcquisition?.source) {
+      existingVisitor.firstAcquisition = acquisition;
+    }
+    if (isNewVisit) {
+      existingVisitor.latestAcquisition = acquisition;
+    }
+    if (
+      (!existingVisitor.referrer || existingVisitor.referrer === "Direct") &&
+      acquisition.referrer
+    ) {
+      existingVisitor.referrer = acquisition.referrer;
+    }
     Object.assign(
       existingVisitor,
       buildVisitorLocationUpdate(existingVisitor, location)

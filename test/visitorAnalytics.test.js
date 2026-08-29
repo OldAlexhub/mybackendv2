@@ -5,6 +5,8 @@ import VisitorInteractionModel from "../models/visitors.js";
 import {
   buildVisitorLocationUpdate,
   extractVisitorMetadata,
+  normalizeAcquisition,
+  parseUserAgent,
   resolveVisitorLocation,
 } from "../utils/visitorAnalytics.js";
 
@@ -45,6 +47,42 @@ test("does not invent coordinates when no edge or GeoIP location is available", 
   assert.equal(location.latitude, null);
   assert.equal(location.longitude, null);
   assert.equal(location.locationSource, "unavailable");
+});
+
+test("rejects provider pseudo-country codes that break region formatting", () => {
+  const location = resolveVisitorLocation("127.0.0.1", {
+    "cf-ipcountry": "T1",
+  });
+
+  assert.equal(location.country, "Unknown");
+});
+
+test("normalizes acquisition details supplied by the landing page", () => {
+  const acquisition = normalizeAcquisition({
+    source: "linkedin",
+    medium: "social",
+    channel: "Organic Social",
+    campaign: "article-launch",
+    referrer: "https://www.linkedin.com/feed/",
+    landingPage: "/articles/example?utm_source=linkedin",
+    redirectCount: 2,
+  });
+
+  assert.equal(acquisition.referrerHost, "linkedin.com");
+  assert.equal(acquisition.campaign, "article-launch");
+  assert.equal(acquisition.redirectCount, 2);
+});
+
+test("classifies visitor device, browser, and operating system", () => {
+  const device = parseUserAgent(
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1"
+  );
+
+  assert.deepEqual(device, {
+    type: "Mobile",
+    browser: "Safari",
+    operatingSystem: "iOS",
+  });
 });
 
 test("never replaces a known city with an unresolved location", () => {

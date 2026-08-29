@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { AcquisitionSchema, DeviceSchema } from "./analyticsSubschemas.js";
 
 const VisitorInteractionSchema = new mongoose.Schema(
   {
@@ -18,6 +19,23 @@ const VisitorInteractionSchema = new mongoose.Schema(
     referrer: {
       type: String, // Captures the previous URL (e.g., Google, another site)
       default: "Direct",
+    },
+    acquisition: {
+      type: AcquisitionSchema,
+      default: undefined,
+    },
+    device: {
+      type: DeviceSchema,
+      default: undefined,
+    },
+    isVisitStart: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    isReturningVisit: {
+      type: Boolean,
+      default: false,
     },
     eventType: {
       type: String,
